@@ -218,31 +218,50 @@ class TermuxEnvironmentManager(
         }
     }
 
+    // Cache of detected tools to avoid constant re-probing
+    private var cachedToolchain: List<ToolchainInfo>? = null
+    private var lastToolchainCheckTime = 0L
+
     /**
-     * Detects availability of essential development tools.
+     * Detects availability of essential development tools across Android, Java, Kotlin, Python, Web, C/C++.
      */
-    suspend fun detectToolchain(): List<ToolchainInfo> = withContext(Dispatchers.IO) {
+    suspend fun detectToolchain(forceRefresh: Boolean = false): List<ToolchainInfo> = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        if (!forceRefresh && cachedToolchain != null && (now - lastToolchainCheckTime < 60_000L)) {
+            return@withContext cachedToolchain!!
+        }
+
         val tools = listOf(
-            "git" to "Version control",
-            "java" to "Java Runtime (JDK)",
+            "git" to "Version control system",
+            "java" to "Java Runtime Environment (JRE/JDK)",
             "javac" to "Java Compiler",
-            "gradle" to "Gradle Build Tool",
-            "python3" to "Python 3 Runtime",
-            "node" to "Node.js Engine",
-            "npm" to "Node Package Manager",
             "kotlinc" to "Kotlin Compiler",
-            "zip" to "Archive utility",
-            "unzip" to "Extraction utility",
-            "curl" to "Network transfer tool"
+            "gradle" to "Gradle Build Tool",
+            "python3" to "Python 3 Runtime & standard library",
+            "node" to "Node.js JavaScript runtime",
+            "npm" to "Node Package Manager",
+            "clang" to "C Compiler (LLVM/Clang)",
+            "clang++" to "C++ Compiler (LLVM/Clang)",
+            "cmake" to "CMake Build System",
+            "make" to "GNU Make utility",
+            "aapt2" to "Android Asset Packaging Tool 2",
+            "d8" to "Android Dex Compiler",
+            "apksigner" to "Android APK Signing Tool",
+            "zipalign" to "Android Zip Alignment Tool",
+            "zip" to "Archive compression utility",
+            "unzip" to "Archive extraction utility",
+            "curl" to "Network data transfer utility",
+            "wget" to "Network file retrieval utility",
+            "tar" to "Tape archive utility"
         )
 
         val resultList = mutableListOf<ToolchainInfo>()
 
         for ((bin, desc) in tools) {
-            val checkRes = executeCommand("which $bin 2>&1", timeoutSeconds = 5)
+            val checkRes = executeCommand("which $bin 2>&1", timeoutSeconds = 3)
             if (checkRes.isSuccess && checkRes.stdout.isNotBlank()) {
                 val path = checkRes.stdout.lines().firstOrNull()?.trim() ?: ""
-                val versionRes = executeCommand("$bin --version 2>&1 || $bin -v 2>&1 || $bin -version 2>&1", timeoutSeconds = 5)
+                val versionRes = executeCommand("$bin --version 2>&1 || $bin -v 2>&1 || $bin -version 2>&1", timeoutSeconds = 4)
                 val version = versionRes.stdout.lines().firstOrNull()?.take(60) ?: "Installed"
                 resultList.add(
                     ToolchainInfo(
@@ -265,7 +284,61 @@ class TermuxEnvironmentManager(
                 )
             }
         }
+        cachedToolchain = resultList
+        lastToolchainCheckTime = now
         resultList
+    }
+
+    /**
+     * Verifies a specific tool before use.
+     */
+    suspend fun verifyTool(toolName: String): ToolchainInfo = withContext(Dispatchers.IO) {
+        val checkRes = executeCommand("which $toolName 2>&1", timeoutSeconds = 3)
+        if (checkRes.isSuccess && checkRes.stdout.isNotBlank()) {
+            val path = checkRes.stdout.lines().firstOrNull()?.trim() ?: ""
+            val versionRes = executeCommand("$toolName --version 2>&1 || $toolName -v 2>&1 || $toolName -version 2>&1", timeoutSeconds = 4)
+            val version = versionRes.stdout.lines().firstOrNull()?.take(60) ?: "Verified"
+            ToolchainInfo(
+                name = toolName,
+                isInstalled = true,
+                version = version,
+                binaryPath = path,
+                notes = "Verified and ready for use"
+            )
+        } else {
+            ToolchainInfo(
+                name = toolName,
+                isInstalled = false,
+                version = null,
+                binaryPath = null,
+                notes = "Tool '$toolName' is not found in PATH or Termux environment."
+            )
+        }
+    }
+
+    /**
+     * Attempts to install a missing tool dependency via Termux package manager (pkg or apt).
+     * Returns true if command executed and verified successfully.
+     */
+    suspend fun installTool(toolName: String): CommandResult = withContext(Dispatchers.IO) {
+        logToConsole("Attempting installation of tool: $toolName")
+        val pkgName = when (toolName) {
+            "javac", "java" -> "openjdk-17"
+            "kotlinc" -> "kotlin"
+            "clang++", "clang" -> "clang"
+            "g++", "gcc" -> "clang"
+            "python3", "python" -> "python"
+            "npm", "node" -> "nodejs"
+            "aapt2", "d8", "apksigner", "zipalign" -> "android-tools"
+            else -> toolName
+        }
+
+        val cmd = "pkg install -y $pkgName || apt-get install -y $pkgName"
+        val result = executeCommand(cmd, timeoutSeconds = 120)
+        logToConsole("Installation result for $pkgName: exitCode=${result.exitCode}")
+        // Force refresh cache
+        detectToolchain(forceRefresh = true)
+        result
     }
 
     /**
@@ -280,7 +353,7 @@ class TermuxEnvironmentManager(
             echo "PAIZI Autonomous Toolchain Installation"
             echo "==============================================="
             pkg update -y
-            pkg install -y git openjdk-17 gradle python nodejs zip unzip curl wget clang make
+            pkg install -y git openjdk-17 gradle python nodejs zip unzip curl wget clang make cmake android-tools
             echo "Toolchain installation complete!"
             echo "Verifying installations:"
             git --version
@@ -288,6 +361,7 @@ class TermuxEnvironmentManager(
             gradle -v
             python3 --version
             node --version
+            clang --version
             echo "==============================================="
             echo "Ready for PAIZI AI Brain Autonomous Builds"
             echo "==============================================="

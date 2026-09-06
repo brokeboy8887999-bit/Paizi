@@ -36,16 +36,20 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -77,6 +81,9 @@ import com.paizi.database.ConversationEntity
 import com.paizi.database.MessageEntity
 import com.paizi.database.ProjectEntity
 import com.paizi.di.DIModule
+import com.paizi.project.map.BlueprintTask
+import com.paizi.project.map.LiveProjectMap
+import com.paizi.project.map.TaskStatus
 import com.paizi.workflow.WorkflowEngine
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -104,6 +111,7 @@ fun ChatScreen(
     val db = DIModule.database
     val workflowEngine = DIModule.workflowEngine
     val workflowState by workflowEngine.workflowState.collectAsState()
+    val liveProjectMap by workflowEngine.liveProjectMap.collectAsState()
     val activeProject by DIModule.projectManager.activeProjectFlow.collectAsState()
 
     // Activity result launcher for zero-permission photo picker
@@ -203,55 +211,34 @@ fun ChatScreen(
                     targetProject = newProj
                 }
 
-                // Launch Planning Workflow
+                // Launch Planning Workflow with Live Project Map integration
+                workflowEngine.startPlanning(targetProject, trimmed)
+
+                val planResultState = workflowEngine.workflowState.value
+                val blueprintText = planResultState.currentBlueprint
+                val currentMap = workflowEngine.liveProjectMap.value
+
                 val planningResponse = StringBuilder()
-                planningResponse.appendLine("🚀 **PAIZI Autonomous Software Engineering Pipeline Initialized**\n")
-                planningResponse.appendLine("I have analyzed your requirement and begun architectural planning for **${targetProject.name}**.\n")
+                planningResponse.appendLine("🚀 **PAIZI Autonomous Engineering Pipeline Initialized**\n")
+                planningResponse.appendLine("I have analyzed your requirement and formulated a dynamic project blueprint for **${targetProject.name}**.\n")
 
-                val planResult = DIModule.plannerAgent.generateBlueprint(
-                    com.paizi.agents.base.BaseAgent.AgentContext(
-                        projectId = targetProject.id,
-                        projectName = targetProject.name,
-                        requirements = trimmed
-                    )
-                )
-
-                if (planResult.success) {
-                    val bpId = "bp_" + UUID.randomUUID().toString().take(8)
-                    val blueprintEntity = com.paizi.database.BlueprintEntity(
-                        id = bpId,
-                        projectId = targetProject.id,
-                        version = 1,
-                        approvalStatus = "PENDING",
-                        contentJson = "{}",
-                        markdownSummary = planResult.outputData,
-                        createdAt = System.currentTimeMillis()
-                    )
-                    db.blueprintDao().insertBlueprint(blueprintEntity)
-
+                if (!blueprintText.isNullOrBlank()) {
                     planningResponse.appendLine("### 📋 Generated Project Blueprint\n")
-                    planningResponse.appendLine(planResult.outputData)
+                    planningResponse.appendLine(blueprintText)
                     planningResponse.appendLine("\n---\n**Status**: Awaiting User Review & Approval.\n*Implementation is strictly locked until you approve the blueprint below.*")
-
-                    val aiMsg = MessageEntity(
-                        id = "msg_" + UUID.randomUUID().toString().take(8),
-                        conversationId = convId,
-                        role = "assistant",
-                        content = planningResponse.toString(),
-                        modelUsed = "PlannerAgent",
-                        providerUsed = "PAIZI Multi-Agent Workflow"
-                    )
-                    db.messageDao().insertMessage(aiMsg)
-                } else {
-                    val errMsg = MessageEntity(
-                        id = "msg_" + UUID.randomUUID().toString().take(8),
-                        conversationId = convId,
-                        role = "assistant",
-                        content = "❌ **Planning Failed**: ${planResult.summary}\n\nPlease check your AI settings and ensure at least one online provider or offline model is active.",
-                        isError = true
-                    )
-                    db.messageDao().insertMessage(errMsg)
+                } else if (currentMap != null) {
+                    planningResponse.appendLine(currentMap.toConversationalText())
                 }
+
+                val aiMsg = MessageEntity(
+                    id = "msg_" + UUID.randomUUID().toString().take(8),
+                    conversationId = convId,
+                    role = "assistant",
+                    content = planningResponse.toString(),
+                    modelUsed = "PlannerAgent",
+                    providerUsed = "PAIZI Multi-Agent Workflow"
+                )
+                db.messageDao().insertMessage(aiMsg)
             } else {
                 // General conversational request (Urdu / English / Coding Q&A)
                 var visionSummary = ""
@@ -310,6 +297,31 @@ fun ChatScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+        // Dynamic Live Project Blueprint / Map (when active)
+        liveProjectMap?.let { map ->
+            LiveProjectMapCard(
+                map = map,
+                isAwaitingApproval = workflowState.currentStep == WorkflowEngine.WorkflowStep.AWAITING_APPROVAL,
+                onApprovePlan = {
+                    coroutineScope.launch {
+                        val project = activeProject
+                        if (project != null) {
+                            workflowEngine.handleUserApproval(project, approved = true, feedback = "Approved from Live Project Map")
+                            val confirmMsg = MessageEntity(
+                                id = "msg_" + UUID.randomUUID().toString().take(8),
+                                conversationId = activeConvId ?: "",
+                                role = "assistant",
+                                content = "✅ **Blueprint Approved!**\n\nCoderAgent has started autonomous implementation. Code files and test evidence are being generated in the workspace."
+                            )
+                            db.messageDao().insertMessage(confirmMsg)
+                        } else {
+                            Toast.makeText(context, "No active project context found", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            )
+        }
+
         // Main Conversation Area
         Box(
             modifier = Modifier
@@ -786,6 +798,199 @@ fun ChatComposer(
                                 contentDescription = "Send",
                                 tint = if (inputPrompt.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LiveProjectMapCard(
+    map: LiveProjectMap,
+    isAwaitingApproval: Boolean = false,
+    onApprovePlan: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    var isExpanded by remember { mutableStateOf(true) }
+
+    ElevatedCard(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 3.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .testTag("live_project_map_card")
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Header Row: PROJECT: <Name> and <Progress>% COMPLETE
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "PROJECT: ${map.projectName}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${map.progressPercentage}% COMPLETE",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = if (map.progressPercentage == 100) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+                    )
+                }
+
+                IconButton(
+                    onClick = { isExpanded = !isExpanded },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Collapse Map" else "Expand Map",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Real Mathematical Progress Indicator (NO fake animation)
+            LinearProgressIndicator(
+                progress = { map.progressPercentage / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = if (map.progressPercentage == 100) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
+            AnimatedVisibility(visible = isExpanded) {
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    // Task sections list
+                    map.tasks.forEach { task ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = task.status.symbol,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = when (task.status) {
+                                    TaskStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+                                    TaskStatus.IN_PROGRESS -> MaterialTheme.colorScheme.tertiary
+                                    TaskStatus.FAILED -> MaterialTheme.colorScheme.error
+                                    TaskStatus.BLOCKED, TaskStatus.NOT_SUPPORTED -> MaterialTheme.colorScheme.error
+                                    TaskStatus.PENDING -> MaterialTheme.colorScheme.outline
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = task.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (task.status == TaskStatus.IN_PROGRESS) FontWeight.Bold else FontWeight.Normal,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (!task.evidence.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(
+                                    text = task.evidence.take(24),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // CURRENTLY: action description
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "CURRENTLY: ${map.currentActionDescription}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+
+                    // Awaiting Approval Action Button
+                    if (isAwaitingApproval) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = onApprovePlan,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("map_approve_button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Approve Plan & Start Autonomous Build")
+                        }
+                    }
+
+                    // Final Completion Gate Results
+                    if (map.finalArtifactPath != null && map.finalVerificationStatus == "VERIFIED") {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = "Verified",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "FINAL ARTIFACT: ${map.finalArtifactPath}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    } else if (map.finalVerificationStatus == "FAILED" || map.finalVerificationStatus == "BLOCKED") {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "STATUS: ${map.finalVerificationStatus} — Verification gate failed.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(8.dp)
                             )
                         }
                     }

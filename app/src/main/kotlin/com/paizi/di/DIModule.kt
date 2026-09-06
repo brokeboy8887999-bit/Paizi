@@ -138,7 +138,8 @@ object DIModule {
                 debuggerAgent = debuggerAgent,
                 testerAgent = testerAgent,
                 buildSystemManager = buildSystemManager,
-                testingSystemManager = testingSystemManager
+                testingSystemManager = testingSystemManager,
+                buildAgent = buildAgent
             )
 
             diagnosticsManager = DiagnosticsManager(appContext, database, database.diagnosticDao())
