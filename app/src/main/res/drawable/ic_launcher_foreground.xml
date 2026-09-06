@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Glowing Outer Tech Shield -->
+    <path
+        android:fillColor="#15818CF8"
+        android:pathData="M54,22 L78,36 L78,66 L54,80 L30,66 L30,36 Z"
+        android:strokeWidth="1.5"
+        android:strokeColor="#818CF8" />
+
+    <!-- Inner Core Badge -->
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M54,28 L72,39 L72,63 L54,74 L36,63 L36,39 Z" />
+
+    <!-- Code Angle Left < -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M44,46 L38,51 L44,56"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeColor="#38BDF8" />
+
+    <!-- Code Angle Right > -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M64,46 L70,51 L64,56"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeColor="#38BDF8" />
+
+    <!-- Stylized P & AI Brain Core -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,43 L56,43 C58.2,43 60,44.8 60,47 C60,49.2 58.2,51 56,51 L51,51 L51,59 L48,59 Z M51,46 L51,48 L56,48 C56.6,48 57,47.6 57,47 C57,46.4 56.6,46 56,46 Z" />
+
+    <!-- Neural pulse dots -->
+    <path
+        android:fillColor="#A7F3D0"
+        android:pathData="M54,34 A2,2 0 1,1 53.9,34 Z" />
+    <path
+        android:fillColor="#C084FC"
+        android:pathData="M54,68 A2,2 0 1,1 53.9,68 Z" />
+</vector>
