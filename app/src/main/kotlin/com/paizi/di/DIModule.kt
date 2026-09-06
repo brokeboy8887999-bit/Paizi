@@ -1,10 +1,17 @@
 package com.paizi.di
 
 import android.content.Context
+import com.paizi.agents.analysis.AnalysisAgent
+import com.paizi.agents.browser.BrowserAgent
+import com.paizi.agents.build.BuildAgent
 import com.paizi.agents.coder.CoderAgent
 import com.paizi.agents.debugger.DebuggerAgent
+import com.paizi.agents.docs.DocumentationAgent
+import com.paizi.agents.file.FileAgent
 import com.paizi.agents.planner.PlannerAgent
+import com.paizi.agents.pm.ProjectManagerAgent
 import com.paizi.agents.reviewer.ReviewerAgent
+import com.paizi.agents.swe.SoftwareEngineerAgent
 import com.paizi.agents.tester.TesterAgent
 import com.paizi.ai.offline.OfflineAIManager
 import com.paizi.ai.online.OnlineAIManager
@@ -18,16 +25,22 @@ import com.paizi.diagnostics.DiagnosticsManager
 import com.paizi.files.WorkspaceFileManager
 import com.paizi.plugins.PluginManager
 import com.paizi.project.manager.ProjectManager
+import com.paizi.termux.TermuxEnvironmentManager
 import com.paizi.testing.TestingSystemManager
 import com.paizi.vision.VisionManager
 import com.paizi.voice.VoiceManager
 import com.paizi.workflow.WorkflowEngine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 object DIModule {
     @Volatile
     private var isInitialized = false
 
     lateinit var database: PAIZIDatabase
+        private set
+    lateinit var termuxEnvironmentManager: TermuxEnvironmentManager
         private set
     lateinit var onlineAIManager: OnlineAIManager
         private set
@@ -51,6 +64,20 @@ object DIModule {
         private set
     lateinit var testerAgent: TesterAgent
         private set
+    lateinit var projectManagerAgent: ProjectManagerAgent
+        private set
+    lateinit var softwareEngineerAgent: SoftwareEngineerAgent
+        private set
+    lateinit var buildAgent: BuildAgent
+        private set
+    lateinit var fileAgent: FileAgent
+        private set
+    lateinit var browserAgent: BrowserAgent
+        private set
+    lateinit var documentationAgent: DocumentationAgent
+        private set
+    lateinit var analysisAgent: AnalysisAgent
+        private set
     lateinit var workflowEngine: WorkflowEngine
         private set
     lateinit var diagnosticsManager: DiagnosticsManager
@@ -71,6 +98,7 @@ object DIModule {
 
             val appContext = context.applicationContext
             database = PAIZIDatabase.getInstance(appContext)
+            termuxEnvironmentManager = TermuxEnvironmentManager(appContext)
 
             onlineAIManager = OnlineAIManager(database.providerConfigDao())
             offlineAIManager = OfflineAIManager(appContext, database.offlineModelDao())
@@ -83,7 +111,7 @@ object DIModule {
             )
 
             projectManager = ProjectManager(appContext, database)
-            buildSystemManager = BuildSystemManager(appContext, database.buildDao())
+            buildSystemManager = BuildSystemManager(appContext, database.buildDao(), termuxEnvironmentManager)
             testingSystemManager = TestingSystemManager(database.testDao())
 
             val defaultWorkspace = WorkspaceFileManager(AppConfig.getWorkspaceRoot(appContext))
@@ -94,6 +122,13 @@ object DIModule {
             coderAgent = CoderAgent(aiRouter, codingEngine)
             debuggerAgent = DebuggerAgent(aiRouter, codingEngine)
             testerAgent = TesterAgent(aiRouter, database.testDao())
+            projectManagerAgent = ProjectManagerAgent(aiRouter)
+            softwareEngineerAgent = SoftwareEngineerAgent(aiRouter)
+            buildAgent = BuildAgent(aiRouter, buildSystemManager)
+            fileAgent = FileAgent(aiRouter, codingEngine)
+            browserAgent = BrowserAgent(aiRouter, BrowserController(appContext))
+            documentationAgent = DocumentationAgent(aiRouter)
+            analysisAgent = AnalysisAgent(aiRouter)
 
             workflowEngine = WorkflowEngine(
                 database = database,
@@ -111,6 +146,10 @@ object DIModule {
             browserController = BrowserController(appContext)
             voiceManager = VoiceManager(appContext)
             pluginManager = PluginManager()
+
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                PAIZIDatabase.ensureDefaultSlotsPopulated(database)
+            }
 
             isInitialized = true
         }

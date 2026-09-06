@@ -184,12 +184,14 @@ fun OnlineProviderCard(
     provider: OnlineProviderConfigEntity,
     onSave: (OnlineProviderConfigEntity) -> Unit
 ) {
-    var name by remember(provider) { mutableStateOf(provider.name) }
     var baseUrl by remember(provider) { mutableStateOf(provider.baseUrl) }
     var apiKey by remember(provider) { mutableStateOf(provider.apiKey) }
     var modelName by remember(provider) { mutableStateOf(provider.modelName) }
-    var isEnabled by remember(provider) { mutableStateOf(provider.isEnabled) }
     var showApiKey by remember { mutableStateOf(false) }
+
+    var isTesting by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<com.paizi.ai.online.OnlineAIManager.ConnectionTestResult?>(null) }
+    val cardScope = rememberCoroutineScope()
 
     ElevatedCard(
         modifier = Modifier
@@ -204,46 +206,39 @@ fun OnlineProviderCard(
             ) {
                 Column {
                     Text(
-                        text = "Slot ${provider.slotIndex + 1}: $name",
-                        style = MaterialTheme.typography.titleMedium,
+                        text = "API ${provider.slotIndex + 1}",
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Priority: ${provider.priority}",
+                        text = "Slot ${provider.slotIndex + 1} of 10 | Generic AI API Endpoint",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+
+                Surface(
+                    color = if (provider.isEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
                     Text(
-                        text = if (isEnabled) "Enabled" else "Disabled",
+                        text = if (provider.isEnabled) "CONNECTED" else "DISCONNECTED",
                         style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    Switch(
-                        checked = isEnabled,
-                        onCheckedChange = { isEnabled = it },
-                        modifier = Modifier.testTag("provider_switch_${provider.slotIndex}")
+                        fontWeight = FontWeight.Bold,
+                        color = if (provider.isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Provider Display Name") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedTextField(
                 value = baseUrl,
                 onValueChange = { baseUrl = it },
-                label = { Text("Base URL Endpoint") },
+                label = { Text("API Endpoint URL") },
+                placeholder = { Text("https://api.example.com/v1") },
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -252,13 +247,16 @@ fun OnlineProviderCard(
             OutlinedTextField(
                 value = apiKey,
                 onValueChange = { apiKey = it },
-                label = { Text("API Key (Stored locally in Room DB)") },
+                label = { Text("API Key / Token (Encrypted locally)") },
                 modifier = Modifier.fillMaxWidth(),
                 visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 trailingIcon = {
                     IconButton(onClick = { showApiKey = !showApiKey }) {
-                        Icon(if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = null)
+                        Icon(
+                            if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (showApiKey) "Hide Key" else "Show Key"
+                        )
                     }
                 }
             )
@@ -268,29 +266,109 @@ fun OnlineProviderCard(
             OutlinedTextField(
                 value = modelName,
                 onValueChange = { modelName = it },
-                label = { Text("Model Identifier (e.g. gemini-2.5-flash, gpt-4o)") },
+                label = { Text("Model Identifier") },
+                placeholder = { Text("e.g. gemini-2.0-flash, gpt-4o, claude-3-5-sonnet") },
                 modifier = Modifier.fillMaxWidth()
             )
 
+            if (testResult != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    color = if (testResult!!.success) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = if (testResult!!.success) "✓ Verified / Working (${testResult!!.latencyMs}ms)" else "✕ Failed / Invalid / Unreachable",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (testResult!!.success) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = testResult!!.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (testResult!!.success) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        if (testResult!!.snippet != null) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Probe Response: \"${testResult!!.snippet}\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
-            Button(
-                onClick = {
-                    onSave(
-                        provider.copy(
-                            name = name,
-                            baseUrl = baseUrl,
-                            apiKey = apiKey,
-                            modelName = modelName,
-                            isEnabled = isEnabled
-                        )
-                    )
-                },
-                modifier = Modifier.fillMaxWidth().testTag("save_provider_${provider.slotIndex}")
+            // Action Buttons: Verify, Connect/Disconnect, Save
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Save Configuration")
+                // Verify Button
+                OutlinedButton(
+                    onClick = {
+                        cardScope.launch {
+                            isTesting = true
+                            testResult = null
+                            val tempConfig = provider.copy(
+                                baseUrl = baseUrl,
+                                apiKey = apiKey,
+                                modelName = modelName
+                            )
+                            val res = DIModule.onlineAIManager.testConnection(tempConfig)
+                            testResult = res
+                            isTesting = false
+                        }
+                    },
+                    enabled = !isTesting,
+                    modifier = Modifier.weight(1f).testTag("verify_api_${provider.slotIndex}")
+                ) {
+                    if (isTesting) {
+                        androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Verifying...")
+                    } else {
+                        Text("Verify")
+                    }
+                }
+
+                // Connect / Disconnect Button
+                if (provider.isEnabled) {
+                    OutlinedButton(
+                        onClick = {
+                            onSave(provider.copy(baseUrl = baseUrl, apiKey = apiKey, modelName = modelName, isEnabled = false))
+                        },
+                        modifier = Modifier.weight(1f).testTag("disconnect_api_${provider.slotIndex}")
+                    ) {
+                        Text("Disconnect")
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            onSave(provider.copy(baseUrl = baseUrl, apiKey = apiKey, modelName = modelName, isEnabled = true))
+                        },
+                        modifier = Modifier.weight(1f).testTag("connect_api_${provider.slotIndex}")
+                    ) {
+                        Text("Connect")
+                    }
+                }
+
+                // Save Button
+                IconButton(
+                    onClick = {
+                        onSave(provider.copy(baseUrl = baseUrl, apiKey = apiKey, modelName = modelName))
+                    },
+                    modifier = Modifier.testTag("save_api_${provider.slotIndex}")
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = "Save Changes")
+                }
             }
         }
     }
@@ -319,13 +397,13 @@ fun OfflineModelCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Slot ${model.slotIndex + 1}: ${model.name}",
+                        text = "${model.slotIndex + 1}. ${model.name}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Arch: ${model.architecture} | Target: ${model.fileName}",
+                        text = "Arch: ${model.architecture} | File: ${model.fileName}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -342,7 +420,14 @@ fun OfflineModelCard(
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
-                        text = model.status,
+                        text = when (model.status) {
+                            "LOADED", "ACTIVE" -> "ACTIVE (IN RAM)"
+                            "INSTALLED" -> "INSTALLED"
+                            "DOWNLOADING" -> "DOWNLOADING"
+                            "PAUSED" -> "PAUSED"
+                            "ERROR" -> "ERROR"
+                            else -> "NOT DOWNLOADED"
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -353,12 +438,12 @@ fun OfflineModelCard(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "File Size: ${if (model.fileSize > 0) "${model.fileSize / (1024 * 1024)}MB" else "Unknown"} | Context: ${model.contextSize} tokens",
+                text = "Model Size: ${if (model.fileSize > 0) "${model.fileSize / (1024 * 1024)}MB" else "Unknown"} | Context: ${model.contextSize} tokens",
                 style = MaterialTheme.typography.bodySmall
             )
             if (model.sha256Hash.isNotBlank()) {
                 Text(
-                    text = "SHA-256: ${model.sha256Hash.take(16)}...",
+                    text = "SHA-256 Checksum: ${model.sha256Hash.take(16)}...",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -367,7 +452,7 @@ fun OfflineModelCard(
             if (model.lastError != null) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Last Error: ${model.lastError}",
+                    text = "Error: ${model.lastError}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -401,7 +486,7 @@ fun OfflineModelCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Action Buttons
+            // Action Buttons: Download / Pause / Activate / Deactivate / Delete
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -412,7 +497,7 @@ fun OfflineModelCard(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Pause")
                     }
-                } else if (model.status != "INSTALLED" && model.status != "LOADED") {
+                } else if (model.status != "INSTALLED" && model.status != "LOADED" && model.status != "ACTIVE") {
                     Button(onClick = onDownload, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
@@ -424,17 +509,17 @@ fun OfflineModelCard(
                     Button(onClick = onLoad, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Load in RAM")
+                        Text("Activate")
                     }
-                } else if (model.status == "LOADED") {
+                } else if (model.status == "LOADED" || model.status == "ACTIVE") {
                     OutlinedButton(onClick = onUnload, modifier = Modifier.weight(1f)) {
-                        Text("Unload")
+                        Text("Deactivate")
                     }
                 }
 
-                if (model.status in listOf("INSTALLED", "PAUSED", "ERROR")) {
+                if (model.status in listOf("INSTALLED", "LOADED", "ACTIVE", "PAUSED", "ERROR")) {
                     OutlinedButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Model", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }

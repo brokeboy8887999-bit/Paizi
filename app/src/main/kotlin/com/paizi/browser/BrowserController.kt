@@ -40,4 +40,33 @@ class BrowserController(private val context: Context) {
             BrowserLaunchResult(false, "No browser or web view activity available in this environment", null)
         }
     }
+
+    suspend fun fetchWebOrSearch(query: String): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val url = if (query.startsWith("http://") || query.startsWith("https://")) {
+                query
+            } else {
+                "https://html.duckduckgo.com/html/?q=${java.net.URLEncoder.encode(query, "UTF-8")}"
+            }
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Android; Mobile) PAIZI-BrowserAgent/1.0")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val raw = response.body?.string() ?: ""
+                    // Strip HTML tags for readable text snippet
+                    raw.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim().take(3000)
+                } else {
+                    "Documentation search HTTP ${response.code}: ${response.message}"
+                }
+            }
+        } catch (e: Exception) {
+            "Web documentation retrieval failed: ${e.message}"
+        }
+    }
 }

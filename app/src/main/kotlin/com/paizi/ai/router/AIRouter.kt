@@ -45,7 +45,7 @@ class AIRouter(
 
         // Step 1: Check Local Offline Model if requested or active
         val activeOfflineModel = offlineModelDao.getActiveModel()
-        if (preferLocal && activeOfflineModel != null && (activeOfflineModel.status == "LOADED" || activeOfflineModel.status == "ACTIVE")) {
+        if (activeOfflineModel != null && (preferLocal || activeOfflineModel.status == "ACTIVE" || activeOfflineModel.status == "LOADED")) {
             attemptedSources.add("Offline: ${activeOfflineModel.name}")
             try {
                 LoggingManager.i(TAG, "Routing $taskType to active offline model: ${activeOfflineModel.name}")

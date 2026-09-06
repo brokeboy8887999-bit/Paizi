@@ -13,11 +13,17 @@ interface ProviderConfigDao {
     @Query("SELECT * FROM online_providers ORDER BY priority ASC, slotIndex ASC")
     fun getAllProviders(): Flow<List<OnlineProviderConfigEntity>>
 
+    @Query("SELECT * FROM online_providers ORDER BY slotIndex ASC")
+    suspend fun getAllProvidersList(): List<OnlineProviderConfigEntity>
+
     @Query("SELECT * FROM online_providers WHERE slotIndex = :slotIndex LIMIT 1")
     suspend fun getProviderBySlot(slotIndex: Int): OnlineProviderConfigEntity?
 
     @Query("SELECT * FROM online_providers WHERE isEnabled = 1 ORDER BY priority ASC")
     suspend fun getEnabledProviders(): List<OnlineProviderConfigEntity>
+
+    @Query("SELECT COUNT(*) FROM online_providers")
+    suspend fun getProviderCount(): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateProvider(provider: OnlineProviderConfigEntity)
@@ -28,11 +34,20 @@ interface OfflineModelDao {
     @Query("SELECT * FROM offline_models ORDER BY slotIndex ASC")
     fun getAllOfflineModels(): Flow<List<OfflineModelEntity>>
 
+    @Query("SELECT * FROM offline_models ORDER BY slotIndex ASC")
+    suspend fun getAllOfflineModelsList(): List<OfflineModelEntity>
+
     @Query("SELECT * FROM offline_models WHERE slotIndex = :slotIndex LIMIT 1")
     suspend fun getModelBySlot(slotIndex: Int): OfflineModelEntity?
 
     @Query("SELECT * FROM offline_models WHERE status = 'LOADED' OR status = 'ACTIVE' LIMIT 1")
     suspend fun getActiveModel(): OfflineModelEntity?
+
+    @Query("SELECT COUNT(*) FROM offline_models")
+    suspend fun getModelCount(): Int
+
+    @Query("DELETE FROM offline_models")
+    suspend fun deleteAllModels()
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateModel(model: OfflineModelEntity)

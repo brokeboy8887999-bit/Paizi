@@ -16,6 +16,9 @@ interface ProjectDao {
     @Query("SELECT * FROM projects WHERE id = :id LIMIT 1")
     suspend fun getProjectById(id: String): ProjectEntity?
 
+    @Query("SELECT * FROM projects ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun getLatestProject(): ProjectEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProject(project: ProjectEntity)
 
@@ -33,6 +36,12 @@ interface ProjectDao {
 interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE projectId = :projectId ORDER BY updatedAt DESC")
     fun getConversationsForProject(projectId: String): Flow<List<ConversationEntity>>
+
+    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
+    fun getAllConversations(): Flow<List<ConversationEntity>>
+
+    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun getLatestConversation(): ConversationEntity?
 
     @Query("SELECT * FROM conversations WHERE id = :id LIMIT 1")
     suspend fun getConversationById(id: String): ConversationEntity?
